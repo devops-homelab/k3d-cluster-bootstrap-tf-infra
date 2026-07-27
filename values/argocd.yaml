@@ -1,0 +1,23 @@
+server:
+  service:
+    type: ClusterIP
+  extraArgs:
+    - --insecure
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
