@@ -22,8 +22,27 @@ variable "argocd_chart_version" {
   default     = "7.3.11"
 }
 
-variable "argocd_values" {
-  description = "Additional values to pass to the ArgoCD Helm chart"
-  type        = any
-  default     = {}
+variable "gitops_repo_url" {
+  description = "URL of the Git repository containing ArgoCD applications"
+  type        = string
+  default     = "https://github.com/devops-homelab/k3d-gitops"
+}
+
+variable "gitops_repo_branch" {
+  description = "Git branch to sync from"
+  type        = string
+  default     = "main"
+}
+
+variable "gitops_repo_path" {
+  description = "Path within the repository containing application manifests"
+  type        = string
+  default     = "argocd-apps"
+}
+
+variable "github_pat_token" {
+  description = "GitHub Personal Access Token for private repository access (requires 'repo' scope)"
+  type        = string
+  sensitive   = true
+  default     = "" # Must be set in terraform.tfvars for private repos
 }

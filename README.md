@@ -45,6 +45,7 @@ k3d kubeconfig get my-k8s-cluster > ~/.kube/config
 ```
 k3d-cluster-bootstrap-tf-infra/
 ├── main.tf              # ArgoCD Helm release and namespace resources
+├── application.tf       # Root ArgoCD application that monitors GitOps repo
 ├── providers.tf         # Kubernetes and Helm provider configuration
 ├── variables.tf         # Input variables and defaults
 ├── outputs.tf           # Output values for ArgoCD access
@@ -112,7 +113,66 @@ terraform apply
 | `kubeconfig_context` | string | `null` | Kubernetes context (uses current if null) |
 | `argocd_namespace` | string | `argocd` | Namespace for ArgoCD |
 | `argocd_chart_version` | string | `7.3.11` | Helm chart version |
-| `argocd_values` | object | `{}` | Additional Helm values |
+| `gitops_repo_url` | string | `https://github.com/devops-homelab/k3d-gitops` | GitOps repository URL |
+| `gitops_repo_branch` | string | `main` | Git branch to sync from |
+| `gitops_repo_path` | string | `argocd-apps` | Path in repo with application manifests |
+| `github_pat_token` | string | `` | GitHub Personal Access Token for private repos (required if repo is private) |
+
+### GitOps Root Application
+
+This configuration automatically creates a root ArgoCD `Application` that monitors your GitOps repository. The root application enables:
+
+- **Declarative management** of all applications via Git
+- **Automatic sync** of application manifests
+- **Self-healing** - automatically reconciles drift
+- **Namespace creation** for discovered applications
+
+Configure the GitOps repository in `terraform.tfvars`:
+
+```hcl
+# GitOps Repository Configuration
+gitops_repo_url    = "https://github.com/devops-homelab/k3d-gitops"
+gitops_repo_branch = "main"
+gitops_repo_path   = "."  # Root of repo, or "apps/" for specific directory
+```
+
+The root application expects Kubernetes manifests (including other ArgoCD Applications) at the specified path.
+
+### Private Repository Authentication
+
+If your GitOps repository is **private**, you must configure authentication credentials. This configuration supports **GitHub Personal Access Tokens (PAT)**.
+
+#### Using GitHub Personal Access Token
+
+1. **Create a GitHub PAT:**
+   - Go to https://github.com/settings/tokens/new
+   - Name: `ArgoCD k3d` (or your preference)
+   - Scopes: Check `repo` (full control of private repositories)
+   - Copy the generated token (starts with `ghp_`)
+
+2. **Configure the PAT in `terraform.tfvars`:**
+   ```hcl
+   github_pat_token = "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ```
+
+   Alternatively, pass via CLI:
+   ```bash
+   terraform apply -var 'github_pat_token=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+   ```
+
+3. **Deploy:**
+   ```bash
+   terraform plan
+   terraform apply
+   ```
+
+When deployed, Terraform creates a Kubernetes Secret (`github-repo-creds`) in the argocd namespace with your credentials. ArgoCD automatically uses this secret to authenticate with your private repository.
+
+> ⚠️ **Security Note:** Never commit your PAT to version control. Use `.env` files or environment variables:
+> ```bash
+> export TF_VAR_github_pat_token=ghp_xxxxx
+> terraform apply
+> ```
 
 ### ArgoCD Helm Values
 
@@ -193,6 +253,28 @@ kubectl get svc -n argocd
 helm list -n argocd
 ```
 
+### Monitor Root Application
+
+```bash
+# Check root application status
+kubectl get application root -n argocd
+
+# Watch real-time sync status
+kubectl get application root -n argocd -w
+
+# Get detailed application info
+kubectl describe application root -n argocd
+
+# View application tree (shows all child apps)
+argocd app list
+```
+
+Expected output when synced successfully:
+```
+NAME   CLUSTER                         NAMESPACE   PROJECT  STATUS     HEALTH   SYNCPOLICY
+root   https://kubernetes.default.svc   argocd      default  Synced     Healthy  Auto
+```
+
 ## 🧹 Cleanup
 
 Remove all resources:
@@ -246,6 +328,31 @@ kubectl patch secret argocd-secret -n argocd \
   --type merge
 ```
 
+### Change GitOps Repository
+
+Update `terraform.tfvars`:
+```hcl
+gitops_repo_url    = "https://github.com/your-org/your-gitops-repo"
+gitops_repo_branch = "main"
+gitops_repo_path   = "apps/"  # Example: manifests in apps/ subdirectory
+```
+
+Then apply:
+```bash
+terraform plan
+terraform apply
+```
+
+### Manual Root Application Sync
+
+```bash
+# Trigger an immediate sync (vs waiting for polling)
+kubectl patch application root -n argocd -p '{}' --type merge -p '{"status":{"operationState":null}}'
+
+# Or use ArgoCD CLI
+argocd app sync root
+```
+
 ## 🐛 Troubleshooting
 
 ### ArgoCD pods not starting
@@ -276,6 +383,28 @@ Verify kubeconfig context:
 kubectl config current-context
 kubectl config get-contexts
 ```
+
+### Root Application not syncing
+
+```bash
+# Check application status and events
+kubectl describe application root -n argocd
+
+# Check if Git repository is accessible
+kubectl logs -n argocd -l app.kubernetes.io/name=argocd-repo-server | grep gitops_repo_url
+
+# Verify Git credentials (if private repo)
+kubectl get secret -n argocd  # Look for git credentials
+
+# Manual sync with verbose output
+argocd app sync root --verbose
+```
+
+**Common issues:**
+- **Repository not found**: Verify `gitops_repo_url` is correct and accessible
+- **Branch not found**: Check `gitops_repo_branch` exists in your repository
+- **Authentication error**: Ensure GitHub token/credentials are configured (for private repos)
+- **Path not found**: Verify `gitops_repo_path` contains valid Kubernetes manifests
 
 ## 🔗 Resources
 
