@@ -13,6 +13,9 @@ resource "kubernetes_manifest" "argocd_root_application" {
         repoURL        = var.gitops_repo_url
         targetRevision = var.gitops_repo_branch
         path           = var.gitops_repo_path
+        directory = {
+          recurse = true
+        }
       }
 
       destination = {
