@@ -15,6 +15,7 @@ resource "kubernetes_manifest" "argocd_root_application" {
         path           = var.gitops_repo_path
         directory = {
           recurse = true
+          include = "**/application.yaml"
         }
       }
 
